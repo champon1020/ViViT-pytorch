@@ -3,7 +3,7 @@ import dataclasses
 
 @dataclasses.dataclass(frozen=True)
 class Config:
-    epochs = 200
-    batch_size = 1
-    es_patience = 10
-    lr = 0.001
+    epochs = 30
+    batch_size = 2
+    base_lr = 1.0
+    warmup_steps = 4000
