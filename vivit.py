@@ -40,7 +40,7 @@ class ViViT(nn.Module):
         image_size,
         patch_size,
         num_classes,
-        num_frames,
+        max_num_frames,
         dim=192,
         depth=4,
         heads=3,
@@ -73,7 +73,7 @@ class ViViT(nn.Module):
         )
 
         self.pos_embedding = nn.Parameter(
-            torch.randn(1, num_frames, num_patches + 1, dim)
+            torch.randn(1, max_num_frames, num_patches + 1, dim)
         )
         self.space_token = nn.Parameter(torch.randn(1, 1, dim))
         self.space_transformer = Transformer(
@@ -96,7 +96,7 @@ class ViViT(nn.Module):
 
         cls_space_tokens = repeat(self.space_token, "() n d -> b t n d", b=b, t=t)
         x = torch.cat((cls_space_tokens, x), dim=2)
-        x += self.pos_embedding[:, :, : (n + 1)]
+        x += self.pos_embedding[:, :x.shape[1], : (n + 1)]
         x = self.dropout(x)
 
         x = rearrange(x, "b t n d -> (b t) n d")
