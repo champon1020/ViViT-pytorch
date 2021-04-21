@@ -14,7 +14,7 @@ from ucf101 import UCF101
 from vivit import ViViT
 
 cfg = Config()
-model = ViViT(240, 16, 101, cfg.n_frames).cuda()
+model = ViViT(cfg.image_size, 16, 101, cfg.n_frames).cuda()
 model = nn.DataParallel(model)
 optimizer = torch.optim.SGD(model.parameters(), lr=cfg.base_lr)
 scheduler = torch.optim.lr_scheduler.LambdaLR(
