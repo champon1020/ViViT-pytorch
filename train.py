@@ -116,6 +116,7 @@ wandb.init(project="vivit", name=f"vivit-{datetime.datetime.now()}")
 train_loader = DataLoader(
     UCF101(
         "./dataset/UCF101",
+        "./dataset/ucfTrainTestlist/classInd.txt",
         [
             f"./dataset/ucfTrainTestlist/trainlist01.txt",
             # f"./dataset/ucfTrainTestlist/trainlist02.txt",
@@ -130,6 +131,7 @@ train_loader = DataLoader(
 val_loader = DataLoader(
     UCF101(
         "./dataset/UCF101",
+        "./dataset/ucfTrainTestlist/classInd.txt",
         [f"./dataset/ucfTrainTestlist/trainlist03.txt"],
         cfg.n_frames,
         cfg.image_size,
