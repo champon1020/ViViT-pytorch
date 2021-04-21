@@ -1,5 +1,5 @@
-from typing import Dict, List
 import os
+from typing import Dict, List
 
 import torch
 import torchvision
@@ -7,14 +7,21 @@ from torch.utils.data import Dataset
 
 
 class UCF101(Dataset):
-    def __init__(self, videos_dir: str, labels_path: List[str]):
+    def __init__(
+        self, videos_dir: str, labels_path: List[str], n_frames: int, image_size: int
+    ):
         self.videos_dir = videos_dir
+        self.n_frames = n_frames
+        self.image_size = image_size
         self.labels = []
-        self.transforms = torchvision.transforms.Compose([
-            torchvision.transforms.ToPILImage(),
-            torchvision.transforms.CenterCrop(240),
-            torchvision.transforms.ToTensor(),
-        ])
+        self.transforms = torchvision.transforms.Compose(
+            [
+                torchvision.transforms.ToPILImage(),
+                torchvision.transforms.CenterCrop(image_size),
+                torchvision.transforms.ToTensor(),
+            ]
+        )
+
         for path in labels_path:
             self._load_labels(path)
 
@@ -22,21 +29,20 @@ class UCF101(Dataset):
         return len(self.labels)
 
     def __getitem__(self, idx: int) -> Dict:
-        return {"video_path": self.labels[idx]["video_path"], "class": self.labels[idx]["class"]}    
-
-        """
-        video_path = self.labels[idx]["video_path"]    
+        video_path = self.labels[idx]["video_path"]
         video = torchvision.io.read_video(video_path, pts_unit="sec")[0].float()
 
         # [t, n, h, w]
+        interval = video.shape[0] // self.n_frames
         video = video.permute(0, 3, 1, 2)
-        new_video = torch.zeros((video.shape[0], video.shape[1], video.shape[2], video.shape[2]))
-        for t in range(video.shape[0]):
-            frame = self.transforms(video[t])
-            new_video[t] = (frame - 127.5) / 127.5
+        new_video = torch.zeros(
+            (self.n_frames, video.shape[1], self.image_size, self.image_size)
+        )
+        for t in range(0, self.n_frames):
+            frame = self.transforms(video[t * interval])
+            new_video[t] = frame / 255
 
-        return {"video": new_video.cuda(), "class": self.labels[idx]["class"]}
-        """
+        return {"video": new_video, "class": self.labels[idx]["class"] - 1}
 
     def _load_labels(self, labels_path: str):
         with open(labels_path) as f:
