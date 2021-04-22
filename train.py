@@ -6,6 +6,7 @@ import torch.nn.functional as F
 import torchvision
 from ignite.engine import Engine, Events
 from ignite.metrics import Accuracy, Loss
+from timesformer_pytorch import TimeSformer
 from torch.utils.data import DataLoader
 
 import wandb
@@ -13,18 +14,34 @@ from config import Config
 from ucf101 import UCF101
 from vivit import ViViT
 
+wandb_online = True
+
 cfg = Config()
-model = ViViT(cfg.image_size, 16, 101, cfg.n_frames).cuda()
+# model = ViViT(cfg.image_size, 16, 101, cfg.n_frames).cuda()
+model = TimeSformer(
+    dim=512,
+    image_size=cfg.image_size,
+    patch_size=16,
+    num_frames=cfg.n_frames,
+    num_classes=101,
+    depth=12,
+    heads=8,
+    dim_head=64,
+    attn_dropout=0.1,
+    ff_dropout=0.1,
+).cuda()
 model = nn.DataParallel(model)
-optimizer = torch.optim.SGD(model.parameters(), lr=cfg.base_lr)
+optimizer = torch.optim.SGD(model.parameters(), lr=0.01, momentum=0.9)
+"""
 scheduler = torch.optim.lr_scheduler.LambdaLR(
     optimizer,
     lambda x: (512 ** -0.5)
     * min((x + 1) ** (-0.5), (x + 1) * cfg.warmup_steps ** (-1.5)),
 )
+"""
 
-# ce_loss_fn = nn.CrossEntropyLoss()
-mlsm_loss_fn = nn.MultiLabelSoftMarginLoss()
+ce_loss_fn = nn.CrossEntropyLoss()
+# mlsm_loss_fn = nn.MultiLabelSoftMarginLoss()
 
 
 def onehot_label(class_num: torch.Tensor):
@@ -35,17 +52,19 @@ print(sum(p.numel() for p in model.parameters()))
 
 
 def train_step(engine, batch):
+    # return 0  # debug
     model.train()
     optimizer.zero_grad()
     video, class_num = batch["video"].cuda(), batch["class"].cuda()
     pred = model(video)
+    print(pred)
     pred = F.softmax(pred, dim=1)
-    # loss = ce_loss_fn(pred, class_num)
-    loss = mlsm_loss_fn(pred, onehot_label(class_num))
+    loss = ce_loss_fn(pred, class_num)
+    # loss = mlsm_loss_fn(pred, onehot_label(class_num))
     loss.backward()
     optimizer.step()
-    scheduler.step()
-    torch.cuda.empty_cache()
+    # scheduler.step()
+    # torch.cuda.empty_cache()
     return loss.item()
 
 
@@ -53,12 +72,13 @@ trainer = Engine(train_step)
 
 
 def validation_step(engine, batch):
+    # return torch.rand(16, 101), torch.zeros(16).long()  # debug
     model.eval()
     with torch.no_grad():
         video, class_num = batch["video"].cuda(), batch["class"].cuda()
         pred = model(video)
         pred = F.softmax(pred, dim=1)
-        torch.cuda.empty_cache()
+        # torch.cuda.empty_cache()
 
     return pred, class_num
 
@@ -74,10 +94,10 @@ evaluator = Engine(validation_step)
 accuracy_metric = Accuracy()
 accuracy_metric.attach(evaluator, "accuracy")
 
-# ce_loss_metric = Loss(ce_loss_fn)
-# ce_loss_metric.attach(evaluator, "loss")
-mlsm_loss_metric = Loss(mlsm_loss_fn, output_transform=mlsm_output_transform)
-mlsm_loss_metric.attach(evaluator, "loss")
+ce_loss_metric = Loss(ce_loss_fn)
+ce_loss_metric.attach(evaluator, "loss")
+# mlsm_loss_metric = Loss(mlsm_loss_fn, output_transform=mlsm_output_transform)
+# mlsm_loss_metric.attach(evaluator, "loss")
 
 
 @trainer.on(Events.ITERATION_COMPLETED)
@@ -86,7 +106,8 @@ def log_training_loss(engine):
     i = engine.state.iteration
     loss = engine.state.output
     print(f"Epoch: {e} / {cfg.epochs} : {i} - Loss: {loss:.5f}")
-    wandb.log({"loss": loss})
+    if wandb_online:
+        wandb.log({"loss": loss})
 
 
 @trainer.on(Events.EPOCH_COMPLETED)
@@ -94,10 +115,11 @@ def log_training_results(engine):
     state = evaluator.run(train_loader)
     metrics = state.metrics
     loss = metrics["loss"]
-    accucary = metrics["accuracy"]
+    accuracy = metrics["accuracy"]
     e = engine.state.epoch
-    print(f"Training Results - Loss: {loss:.5f}, Avg accuracy: {accucary:.5f}")
-    wandb.log({"train_loss": loss, "train_accuracy": accuracy})
+    print(f"Training Results - Loss: {loss:.5f}, Avg accuracy: {accuracy:.5f}")
+    if wandb_online:
+        wandb.log({"train_loss": loss, "train_accuracy": accuracy})
 
 
 @trainer.on(Events.EPOCH_COMPLETED)
@@ -105,14 +127,16 @@ def log_validation_results(engine):
     state = evaluator.run(val_loader)
     metrics = state.metrics
     loss = metrics["loss"]
-    accucary = metrics["accuracy"]
-    print(f"Valiation Results - Loss: {loss:.5f}, Avg accuracy: {accucary:.5f}")
-    wandb.log({"validation_loss": loss, "validation_accuracy": accuracy})
+    accuracy = metrics["accuracy"]
+    print(f"Valiation Results - Loss: {loss:.5f}, Avg accuracy: {accuracy:.5f}")
+    if wandb_online:
+        wandb.log({"validation_loss": loss, "validation_accuracy": accuracy})
 
 
-wandb.init(project="vivit", name=f"vivit-{datetime.datetime.now()}")
+if wandb_online:
+    wandb.init(project="vivit", name=f"vivit-{datetime.datetime.now()}")
 
-# k times cross validation
+
 train_loader = DataLoader(
     UCF101(
         "./dataset/UCF101",
@@ -139,5 +163,6 @@ val_loader = DataLoader(
     cfg.batch_size,
     shuffle=False,
 )
+
 trainer.run(train_loader, max_epochs=cfg.epochs)
 torch.save(model, f"./checkpoints/ckpt.pt")

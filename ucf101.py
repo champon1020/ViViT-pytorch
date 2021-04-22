@@ -36,6 +36,8 @@ class UCF101(Dataset):
         return len(self.labels)
 
     def __getitem__(self, idx: int) -> Dict:
+        # return 0  # debug
+
         video_path = self.labels[idx]["video_path"]
         video = torchvision.io.read_video(video_path, pts_unit="sec")[0].float()
 
@@ -47,7 +49,7 @@ class UCF101(Dataset):
         )
         for t in range(0, self.n_frames):
             frame = self.transforms(video[t * interval])
-            new_video[t] = frame / 255
+            new_video[t] = frame
 
         return {"video": new_video, "class": self.labels[idx]["class"] - 1}
 
