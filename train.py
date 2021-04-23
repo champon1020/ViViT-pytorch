@@ -17,7 +17,8 @@ from vivit import ViViT
 wandb_online = True
 
 cfg = Config()
-# model = ViViT(cfg.image_size, 16, 101, cfg.n_frames).cuda()
+model = ViViT(cfg.image_size, 16, 101, cfg.n_frames).cuda()
+"""
 model = TimeSformer(
     dim=512,
     image_size=cfg.image_size,
@@ -30,15 +31,10 @@ model = TimeSformer(
     attn_dropout=0.1,
     ff_dropout=0.1,
 ).cuda()
+"""
 model = nn.DataParallel(model)
-optimizer = torch.optim.SGD(model.parameters(), lr=0.01, momentum=0.9)
-"""
-scheduler = torch.optim.lr_scheduler.LambdaLR(
-    optimizer,
-    lambda x: (512 ** -0.5)
-    * min((x + 1) ** (-0.5), (x + 1) * cfg.warmup_steps ** (-1.5)),
-)
-"""
+optimizer = torch.optim.SGD(model.parameters(), lr=cfg.base_lr, momentum=0.9)
+scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, 50)
 
 ce_loss_fn = nn.CrossEntropyLoss()
 # mlsm_loss_fn = nn.MultiLabelSoftMarginLoss()
@@ -57,13 +53,12 @@ def train_step(engine, batch):
     optimizer.zero_grad()
     video, class_num = batch["video"].cuda(), batch["class"].cuda()
     pred = model(video)
-    print(pred)
     pred = F.softmax(pred, dim=1)
     loss = ce_loss_fn(pred, class_num)
     # loss = mlsm_loss_fn(pred, onehot_label(class_num))
     loss.backward()
     optimizer.step()
-    # scheduler.step()
+    scheduler.step()
     # torch.cuda.empty_cache()
     return loss.item()
 
