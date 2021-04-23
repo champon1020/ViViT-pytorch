@@ -41,14 +41,14 @@ class ViViT(nn.Module):
         patch_size,
         num_classes,
         num_frames,
-        dim=192,
+        dim=512,
         depth=4,
         heads=3,
         pool="cls",
         in_channels=3,
         dim_head=64,
         dropout=0.0,
-        emb_dropout=0.0,
+        emb_dropout=0.1,
         scale_dim=4,
     ):
         super().__init__()
