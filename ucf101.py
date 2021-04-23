@@ -23,6 +23,7 @@ class UCF101(Dataset):
                 torchvision.transforms.ToPILImage(),
                 torchvision.transforms.CenterCrop(image_size),
                 torchvision.transforms.ToTensor(),
+                transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
             ]
         )
 
