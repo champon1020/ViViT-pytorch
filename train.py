@@ -17,7 +17,21 @@ from vivit import ViViT
 wandb_online = True
 
 cfg = Config()
-model = ViViT(cfg.image_size, 16, 101, cfg.n_frames).cuda()
+
+"""
+model = ViViT(
+    dim=512,
+    image_size=cfg.image_size,
+    patch_size=16,
+    num_classes=101,
+    num_frames=cfg.n_frames,
+    depth=12,
+    heads=4,
+    pool="cls",
+    in_channels=3,
+    dim_head=64,
+    dropout=0.1,
+).cuda()
 """
 model = TimeSformer(
     dim=512,
@@ -31,13 +45,17 @@ model = TimeSformer(
     attn_dropout=0.1,
     ff_dropout=0.1,
 ).cuda()
-"""
-model = nn.DataParallel(model)
-optimizer = torch.optim.SGD(model.parameters(), lr=cfg.base_lr, momentum=0.9)
-scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, 50)
 
+model = nn.DataParallel(model)
+optimizer = torch.optim.SGD(
+    model.parameters(),
+    lr=cfg.base_lr,
+    momentum=0.9,
+    nesterov=True,
+    weight_decay=1e-3,
+)
+scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, cfg.multistep_milestones)
 ce_loss_fn = nn.CrossEntropyLoss()
-# mlsm_loss_fn = nn.MultiLabelSoftMarginLoss()
 
 
 def onehot_label(class_num: torch.Tensor):
@@ -55,7 +73,7 @@ def train_step(engine, batch):
     pred = model(video)
     pred = F.softmax(pred, dim=1)
     loss = ce_loss_fn(pred, class_num)
-    # loss = mlsm_loss_fn(pred, onehot_label(class_num))
+    # print(torch.argmax(pred, dim=1), class_num)
     loss.backward()
     optimizer.step()
     scheduler.step()
@@ -78,21 +96,12 @@ def validation_step(engine, batch):
     return pred, class_num
 
 
-def mlsm_output_transform(output):
-    pred, class_num = output
-    onehot_class_num = onehot_label(class_num)
-    return pred, onehot_class_num
-
-
 evaluator = Engine(validation_step)
 
 accuracy_metric = Accuracy()
 accuracy_metric.attach(evaluator, "accuracy")
-
 ce_loss_metric = Loss(ce_loss_fn)
 ce_loss_metric.attach(evaluator, "loss")
-# mlsm_loss_metric = Loss(mlsm_loss_fn, output_transform=mlsm_output_transform)
-# mlsm_loss_metric.attach(evaluator, "loss")
 
 
 @trainer.on(Events.ITERATION_COMPLETED)
@@ -101,8 +110,8 @@ def log_training_loss(engine):
     i = engine.state.iteration
     loss = engine.state.output
     print(f"Epoch: {e} / {cfg.epochs} : {i} - Loss: {loss:.5f}")
-    if wandb_online:
-        wandb.log({"loss": loss})
+    # if wandb_online:
+    #   wandb.log({"loss": loss})
 
 
 @trainer.on(Events.EPOCH_COMPLETED)
@@ -160,4 +169,4 @@ val_loader = DataLoader(
 )
 
 trainer.run(train_loader, max_epochs=cfg.epochs)
-torch.save(model, f"./checkpoints/ckpt.pt")
+torch.save(model, f"./checkpoints/ckpt-{datetime.datetime.now()}.pt")

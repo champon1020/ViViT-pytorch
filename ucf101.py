@@ -21,9 +21,9 @@ class UCF101(Dataset):
         self.transforms = torchvision.transforms.Compose(
             [
                 torchvision.transforms.ToPILImage(),
-                torchvision.transforms.CenterCrop(image_size),
+                torchvision.transforms.RandomResizedCrop(image_size),
                 torchvision.transforms.ToTensor(),
-                torchvision.transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
+                torchvision.transforms.Normalize((0, 0, 0), (1, 1, 1)),
             ]
         )
 
